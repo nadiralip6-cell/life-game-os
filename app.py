@@ -5,38 +5,9 @@ import os
 import time
 
 # ==========================================
-# 1. 存档系统
+# 1. UI 配置 (Obsidian Theme)
 # ==========================================
-SAVE_FILE = "lifegame_save.json"
-
-def load_data():
-    if os.path.exists(SAVE_FILE):
-        try:
-            with open(SAVE_FILE, "r", encoding='utf-8') as f:
-                return json.load(f)
-        except:
-            return None
-    return None
-
-def save_data():
-    data = {
-        "xp": st.session_state.xp,
-        "level": st.session_state.level,
-        "energy": st.session_state.energy,
-        "gold": st.session_state.gold,
-        "count_gym": st.session_state.count_gym,
-        "count_focus": st.session_state.count_focus,
-        "count_review": st.session_state.count_review,
-        "activities": st.session_state.activities,
-        "rewards": st.session_state.rewards
-    }
-    with open(SAVE_FILE, "w", encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-# ==========================================
-# 2. UI 配置 (Obsidian Theme)
-# ==========================================
-st.set_page_config(page_title="LifeGame V14", layout="wide")
+st.set_page_config(page_title="LifeGame V15 Online", layout="wide")
 
 st.markdown("""
 <style>
@@ -116,15 +87,47 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
+# 2. 多用户存档系统 (Multi-User Engine)
+# ==========================================
+# 我们不再用写死的 SAVE_FILE，而是写一个函数根据用户名生成文件名
+
+def get_save_file(username):
+    # 简单的清理，防止文件名非法字符
+    safe_name = "".join([c for c in username if c.isalnum()])
+    if not safe_name: safe_name = "guest"
+    return f"save_{safe_name}.json"
+
+def load_data(username):
+    file_path = get_save_file(username)
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r", encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return None
+    return None
+
+def save_data(username):
+    file_path = get_save_file(username)
+    data = {
+        "xp": st.session_state.xp,
+        "level": st.session_state.level,
+        "energy": st.session_state.energy,
+        "gold": st.session_state.gold,
+        "count_gym": st.session_state.count_gym,
+        "count_focus": st.session_state.count_focus,
+        "count_review": st.session_state.count_review,
+        "activities": st.session_state.activities,
+        "rewards": st.session_state.rewards
+    }
+    with open(file_path, "w", encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+# ==========================================
 # 3. 核心工具函数：手写 HTML 进度条
 # ==========================================
 def render_custom_bar(label, value, max_val, color_start, color_end):
-    """
-    完全抛弃 st.progress，用 HTML/CSS 手画一个完美的进度条。
-    """
     percentage = min(100, max(0, (value / max_val) * 100))
-    
-    # 构建 HTML 字符串
     bar_html = f"""
     <div style="margin-bottom: 15px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 14px; font-weight: 600; color: #ccc;">
@@ -152,58 +155,88 @@ def get_badge_status(count, name_map):
     return f"<div class='badge-card' style='border-style:dashed; color:#444;'>🔒 {name_map}<br><small>{count}/7</small></div>"
 
 # ==========================================
-# 4. 数据加载
-# ==========================================
-saved_data = load_data()
-
-# 初始化逻辑...
-if 'xp' not in st.session_state: st.session_state.xp = 0.0
-if 'level' not in st.session_state: st.session_state.level = 1
-if 'energy' not in st.session_state: st.session_state.energy = 100.0
-if 'gold' not in st.session_state: st.session_state.gold = 0.0
-if 'count_gym' not in st.session_state: st.session_state.count_gym = 0
-if 'count_focus' not in st.session_state: st.session_state.count_focus = 0
-if 'count_review' not in st.session_state: st.session_state.count_review = 0
-if 'activities' not in st.session_state: st.session_state.activities = {}
-if 'rewards' not in st.session_state: st.session_state.rewards = {}
-
-# 如果有存档，覆盖默认值
-if saved_data:
-    for k, v in saved_data.items():
-        st.session_state[k] = v
-
-# 默认数据填充 (防止空数据)
-if not st.session_state.activities:
-    st.session_state.activities = {
-        "🍳 营养早饭": [2.0, +15.0, "count", "Morning"],
-        "🧼 洗碗家务": [1.0, -2.0, "count", "Morning"],
-        "❄️ 寒冷启动": [5.0, +8.0, "count", "Morning"],
-        "🔥 Focus Zone": [1.5, -0.6, "time", "Work"], 
-        "🚬 抽根烟": [0.0, +3.0, "count", "Life"],
-        "📱 划手机": [0.1, +0.2, "time", "Life"],
-        "🚶‍♂️ 散步+饮料": [3.0, +10.0, "count", "Life"],
-        "👨‍🍳 做饭": [5.0, -5.0, "count", "Life"],
-        "📺 吃饭+老友记": [1.0, +15.0, "time", "Life"],
-        "💪 健身房": [2.0, -1.0, "time", "Night"], 
-        "📝 每日复盘": [10.0, -5.0, "count", "Night"],
-        "🛌 睡觉": [0.0, +1.5, "time", "Night"],
-    }
-if not st.session_state.rewards:
-    st.session_state.rewards = {
-        "🥤 奶茶": 600, "🎮 新游戏": 8000, "✈️ 旅行": 30000
-    }
-
-# ==========================================
-# 5. 侧边栏
+# 4. 侧边栏：登录与控制台
 # ==========================================
 with st.sidebar:
     st.title("CMD CENTER")
+    
+    # --- 🔑 关键修改：用户身份识别 ---
+    st.markdown("### 🆔 PLAYER ID")
+    # 默认是 Guest，用户输入名字后按回车，state 刷新，数据切换
+    user_id = st.text_input("Enter your name to load save:", "Guest")
+    st.caption(f"Current File: save_{user_id}.json")
+    st.write("---")
+    # -------------------------------
+
+    # 数据加载逻辑移到这里，根据 user_id 加载
+    saved_data = load_data(user_id)
+    
+    # 如果换了用户，且 session_state 里存的还是上一个人的数据，我们需要刷新一下
+    # 这里通过简单的判断：如果加载了数据，就用加载的；如果没有，就初始化
+    
+    # (为了简化逻辑，我们每次 rerun 都检查一下是否需要覆盖数据)
+    # 但 Streamlit 的运行机制是每次交互都重跑。
+    # 我们用一个 flag 标记当前加载的是谁的数据
+    if 'current_user' not in st.session_state:
+        st.session_state.current_user = user_id
+    
+    # 如果用户切了名字，强制重载
+    if st.session_state.current_user != user_id:
+        st.session_state.current_user = user_id
+        saved_data = load_data(user_id) # 重读新用户的数据
+        # 清空当前内存，准备接收新数据
+        for key in ['xp', 'level', 'energy', 'gold', 'activities', 'rewards']:
+            if key in st.session_state: del st.session_state[key]
+
+    # --- 数据初始化/填充 ---
+    # 如果有存档，加载
+    if saved_data:
+        if 'xp' not in st.session_state: st.session_state.xp = saved_data.get('xp', 0.0)
+        if 'level' not in st.session_state: st.session_state.level = saved_data.get('level', 1)
+        if 'energy' not in st.session_state: st.session_state.energy = saved_data.get('energy', 100.0)
+        if 'gold' not in st.session_state: st.session_state.gold = saved_data.get('gold', 0.0)
+        if 'count_gym' not in st.session_state: st.session_state.count_gym = saved_data.get('count_gym', 0)
+        if 'count_focus' not in st.session_state: st.session_state.count_focus = saved_data.get('count_focus', 0)
+        if 'count_review' not in st.session_state: st.session_state.count_review = saved_data.get('count_review', 0)
+        if 'activities' not in st.session_state: st.session_state.activities = saved_data.get('activities', {})
+        if 'rewards' not in st.session_state: st.session_state.rewards = saved_data.get('rewards', {})
+    else:
+        # 没存档（新用户），给默认值
+        if 'xp' not in st.session_state: st.session_state.xp = 0.0
+        if 'level' not in st.session_state: st.session_state.level = 1
+        if 'energy' not in st.session_state: st.session_state.energy = 100.0
+        if 'gold' not in st.session_state: st.session_state.gold = 0.0
+        if 'count_gym' not in st.session_state: st.session_state.count_gym = 0
+        if 'count_focus' not in st.session_state: st.session_state.count_focus = 0
+        if 'count_review' not in st.session_state: st.session_state.count_review = 0
+        
+        if 'activities' not in st.session_state or not st.session_state.activities:
+            st.session_state.activities = {
+                "🍳 营养早饭": [2.0, +15.0, "count", "Morning"],
+                "🧼 洗碗家务": [1.0, -2.0, "count", "Morning"],
+                "❄️ 寒冷启动": [5.0, +8.0, "count", "Morning"],
+                "🔥 Focus Zone": [1.5, -0.6, "time", "Work"], 
+                "🚬 抽根烟": [0.0, +3.0, "count", "Life"],
+                "📱 划手机": [0.1, +0.2, "time", "Life"],
+                "🚶‍♂️ 散步+饮料": [3.0, +10.0, "count", "Life"],
+                "👨‍🍳 做饭": [5.0, -5.0, "count", "Life"],
+                "📺 吃饭+老友记": [1.0, +15.0, "time", "Life"],
+                "💪 健身房": [2.0, -1.0, "time", "Night"], 
+                "📝 每日复盘": [10.0, -5.0, "count", "Night"],
+                "🛌 睡觉": [0.0, +1.5, "time", "Night"],
+            }
+        if 'rewards' not in st.session_state or not st.session_state.rewards:
+            st.session_state.rewards = {
+                "🥤 奶茶": 600, "🎮 新游戏": 8000, "✈️ 旅行": 30000
+            }
+
+    # --- 侧边栏后续内容 ---
     st.markdown(f"<div class='gold-stat'>{int(st.session_state.gold)}</div>", unsafe_allow_html=True)
     st.caption("GOLD RESERVES")
     
-    if st.button("💾 SAVE STATE"):
-        save_data()
-        st.toast("Saved.")
+    if st.button("💾 SAVE DATA"):
+        save_data(user_id) # 这里的 Save 也要带上 user_id
+        st.toast(f"Saved to save_{user_id}.json")
 
     st.write("---")
     with st.expander("RANKS"):
@@ -230,48 +263,42 @@ with st.sidebar:
             if st.button("Add Act"):
                 m_code = "time" if "Time" in mode else "count"
                 st.session_state.activities[n_act] = [1.0, 0.0, m_code, cat]
-                save_data()
+                save_data(user_id)
                 st.rerun()
         with tab2:
             n_rew = st.text_input("Reward")
             n_cost = st.number_input("Cost", step=100, value=5000)
             if st.button("Add Rew"):
                 st.session_state.rewards[n_rew] = n_cost
-                save_data()
+                save_data(user_id)
                 st.rerun()
 
 # ==========================================
-# 6. 主逻辑
+# 5. 主逻辑
 # ==========================================
 while st.session_state.xp >= 100:
     st.session_state.level += 1
     st.session_state.xp -= 100
     st.toast(f"LEVEL UP! LV.{st.session_state.level}")
-    save_data()
+    save_data(user_id)
 
 # ==========================================
-# 7. 主界面 (自定义进度条登场)
+# 6. 主界面
 # ==========================================
 c1, c2 = st.columns([3, 1])
-with c1: st.title("LifeGame V14")
+with c1: st.title(f"LifeGame: {user_id}") # 标题也显示用户名
 with c2: st.metric("LEVEL", f"{st.session_state.level}")
 
 st.write("---")
 
 c_xp, c_en = st.columns(2)
-
 with c_xp:
-    # 🌟 使用自定义函数绘制 XP 条 (金色)
-    # 颜色代码: #FFD700 (Gold) -> #FDB931 (Dark Gold)
     render_custom_bar("EXPERIENCE", st.session_state.xp, 100, "#FFD700", "#FDB931")
-
 with c_en:
-    # ⚡ 使用自定义函数绘制 Energy 条 (青色)
-    # 颜色代码: #00d2ff (Cyan) -> #3a7bd5 (Blue)
     render_custom_bar("ENERGY", st.session_state.energy, 100, "#00d2ff", "#3a7bd5")
 
 # ==========================================
-# 8. 行动区
+# 7. 行动区
 # ==========================================
 st.write("### 🗓️ Daily Protocol")
 
@@ -328,7 +355,7 @@ for name, values in st.session_state.activities.items():
                         if "复盘" in name: st.session_state.count_review += 1
                         if "健身" in name: st.session_state.count_gym += 1
                         
-                        save_data()
+                        save_data(user_id) # 这里的 Save 也要带上 user_id
                         
                         if is_crit: st.toast(f"🔥 CRIT! XP +{int(t_xp)}")
                         else: st.toast(f"Done. XP +{int(t_xp)}")
