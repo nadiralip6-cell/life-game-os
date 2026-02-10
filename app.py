@@ -7,7 +7,7 @@ import time
 # ==========================================
 # 1. UI 配置 (Obsidian Theme)
 # ==========================================
-st.set_page_config(page_title="LifeGame V15 Online", layout="wide")
+st.set_page_config(page_title="LifeGame V16 Leaderboard", layout="wide")
 
 st.markdown("""
 <style>
@@ -32,7 +32,7 @@ st.markdown("""
     h1, h2, h3 { color: #fff !important; font-weight: 900 !important; }
     p, label { color: #888 !important; }
 
-    /* 按钮：黑底白字，悬停反转 */
+    /* 按钮 */
     div.stButton > button {
         background-color: #0A0A0A;
         color: #fff;
@@ -56,14 +56,17 @@ st.markdown("""
         border-radius: 8px;
     }
 
-    /* 金币 */
-    .gold-stat {
-        font-size: 2.5em; 
-        font-weight: 900; 
-        color: #FFD700;
-        text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+    /* 进度条底槽 & 填充 */
+    div[data-testid="stProgress"] > div > div {
+        background-color: #333333 !important;
+        height: 8px !important;
+        border-radius: 10px;
     }
-    
+    div[data-testid="stProgress"] > div > div > div > div {
+        background-color: #ffffff !important;
+        border-radius: 10px;
+    }
+
     /* 徽章卡片 */
     .badge-card {
         background: #111;
@@ -83,16 +86,26 @@ st.markdown("""
     .stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid #222; }
     .stTabs [data-baseweb="tab"] { color: #666; }
     .stTabs [aria-selected="true"] { color: #fff !important; border-bottom: 2px solid #fff; }
+
+    /* 排行榜样式 */
+    .leader-row {
+        padding: 10px;
+        border-bottom: 1px solid #222;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .rank-1 { color: #FFD700; font-weight: bold; font-size: 1.1em; border: 1px solid #FFD700; border-radius: 8px; padding: 5px 10px; box-shadow: 0 0 10px rgba(255, 215, 0, 0.2); }
+    .rank-2 { color: #C0C0C0; font-weight: bold; font-size: 1.1em; }
+    .rank-3 { color: #CD7F32; font-weight: bold; font-size: 1.1em; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 多用户存档系统 (Multi-User Engine)
+# 2. 存档与排行榜系统 (Ranking Engine)
 # ==========================================
-# 我们不再用写死的 SAVE_FILE，而是写一个函数根据用户名生成文件名
 
 def get_save_file(username):
-    # 简单的清理，防止文件名非法字符
     safe_name = "".join([c for c in username if c.isalnum()])
     if not safe_name: safe_name = "guest"
     return f"save_{safe_name}.json"
@@ -122,6 +135,38 @@ def save_data(username):
     }
     with open(file_path, "w", encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+# --- 🔥 新增：扫描所有人并排序 ---
+def get_leaderboard_data():
+    # 1. 找到当前目录下所有 save_ 开头的 json 文件
+    files = [f for f in os.listdir('.') if f.startswith('save_') and f.endswith('.json')]
+    
+    leaderboard = []
+    
+    for f in files:
+        try:
+            # 从文件名提取用户名 (save_Nadir.json -> Nadir)
+            user_name = f.replace("save_", "").replace(".json", "")
+            
+            with open(f, "r", encoding='utf-8') as file:
+                data = json.load(file)
+                lvl = data.get('level', 1)
+                xp = data.get('xp', 0)
+                # 计算总分 (等级权重高，XP权重低)
+                # 比如 LV.5 XP.50 = 550分
+                score = (lvl * 100) + xp 
+                
+                leaderboard.append({
+                    "name": user_name,
+                    "level": lvl,
+                    "score": score
+                })
+        except:
+            continue
+            
+    # 2. 按分数从高到低排序
+    leaderboard.sort(key=lambda x: x["score"], reverse=True)
+    return leaderboard
 
 # ==========================================
 # 3. 核心工具函数：手写 HTML 进度条
@@ -155,41 +200,26 @@ def get_badge_status(count, name_map):
     return f"<div class='badge-card' style='border-style:dashed; color:#444;'>🔒 {name_map}<br><small>{count}/7</small></div>"
 
 # ==========================================
-# 4. 侧边栏：登录与控制台
+# 4. 侧边栏：登录与排行榜
 # ==========================================
 with st.sidebar:
     st.title("CMD CENTER")
     
-    # --- 🔑 关键修改：用户身份识别 ---
     st.markdown("### 🆔 PLAYER ID")
-    # 默认是 Guest，用户输入名字后按回车，state 刷新，数据切换
-    user_id = st.text_input("Enter your name to load save:", "Guest")
-    st.caption(f"Current File: save_{user_id}.json")
-    st.write("---")
-    # -------------------------------
-
-    # 数据加载逻辑移到这里，根据 user_id 加载
+    user_id = st.text_input("Login Name", "Guest")
+    
+    # 自动保存当前用户标识
+    if 'current_user' not in st.session_state: st.session_state.current_user = user_id
+    
+    # 切换用户逻辑
     saved_data = load_data(user_id)
-    
-    # 如果换了用户，且 session_state 里存的还是上一个人的数据，我们需要刷新一下
-    # 这里通过简单的判断：如果加载了数据，就用加载的；如果没有，就初始化
-    
-    # (为了简化逻辑，我们每次 rerun 都检查一下是否需要覆盖数据)
-    # 但 Streamlit 的运行机制是每次交互都重跑。
-    # 我们用一个 flag 标记当前加载的是谁的数据
-    if 'current_user' not in st.session_state:
-        st.session_state.current_user = user_id
-    
-    # 如果用户切了名字，强制重载
     if st.session_state.current_user != user_id:
         st.session_state.current_user = user_id
-        saved_data = load_data(user_id) # 重读新用户的数据
-        # 清空当前内存，准备接收新数据
+        saved_data = load_data(user_id)
         for key in ['xp', 'level', 'energy', 'gold', 'activities', 'rewards']:
             if key in st.session_state: del st.session_state[key]
 
-    # --- 数据初始化/填充 ---
-    # 如果有存档，加载
+    # --- 数据填充 ---
     if saved_data:
         if 'xp' not in st.session_state: st.session_state.xp = saved_data.get('xp', 0.0)
         if 'level' not in st.session_state: st.session_state.level = saved_data.get('level', 1)
@@ -201,7 +231,6 @@ with st.sidebar:
         if 'activities' not in st.session_state: st.session_state.activities = saved_data.get('activities', {})
         if 'rewards' not in st.session_state: st.session_state.rewards = saved_data.get('rewards', {})
     else:
-        # 没存档（新用户），给默认值
         if 'xp' not in st.session_state: st.session_state.xp = 0.0
         if 'level' not in st.session_state: st.session_state.level = 1
         if 'energy' not in st.session_state: st.session_state.energy = 100.0
@@ -230,30 +259,50 @@ with st.sidebar:
                 "🥤 奶茶": 600, "🎮 新游戏": 8000, "✈️ 旅行": 30000
             }
 
-    # --- 侧边栏后续内容 ---
-    st.markdown(f"<div class='gold-stat'>{int(st.session_state.gold)}</div>", unsafe_allow_html=True)
-    st.caption("GOLD RESERVES")
-    
+    # --- 🏆 排行榜展示 (Sidebar) ---
+    st.write("---")
+    with st.expander("🏆 GLOBAL RANKING", expanded=True):
+        leaders = get_leaderboard_data()
+        
+        if not leaders:
+            st.caption("No data yet.")
+        else:
+            rank = 1
+            for player in leaders:
+                # 样式处理
+                icon = f"#{rank}"
+                style_class = ""
+                if rank == 1: 
+                    icon = "🥇"
+                    style_class = "rank-1"
+                elif rank == 2: 
+                    icon = "🥈"
+                    style_class = "rank-2"
+                elif rank == 3: 
+                    icon = "🥉"
+                    style_class = "rank-3"
+                
+                # 高亮自己
+                is_me = "(ME)" if player['name'] == user_id else ""
+                
+                # HTML 渲染排行榜行
+                st.markdown(f"""
+                <div class="leader-row">
+                    <span class="{style_class}">{icon} {player['name']} {is_me}</span>
+                    <span style="color:#888; font-family:monospace">LV.{player['level']}</span>
+                </div>
+                """, unsafe_allow_html=True)
+                rank += 1
+            
+            if st.button("🔄 Refresh Rank"):
+                st.rerun()
+
+    # --- 其他 Sidebar ---
+    st.write("---")
     if st.button("💾 SAVE DATA"):
-        save_data(user_id) # 这里的 Save 也要带上 user_id
-        st.toast(f"Saved to save_{user_id}.json")
+        save_data(user_id)
+        st.toast(f"Saved: {user_id}")
 
-    st.write("---")
-    with st.expander("RANKS"):
-        st.markdown(get_badge_status(st.session_state.count_gym, "STR"), unsafe_allow_html=True)
-        st.markdown(get_badge_status(st.session_state.count_focus, "INT"), unsafe_allow_html=True)
-        st.markdown(get_badge_status(st.session_state.count_review, "WIS"), unsafe_allow_html=True)
-
-    st.write("---")
-    with st.expander("REWARDS"):
-        for item, cost in st.session_state.rewards.items():
-            if st.session_state.gold >= cost:
-                if st.button(f"CLAIM {item}", key=f"r_{item}"):
-                    st.balloons()
-            else:
-                st.button(f"{item} ({int(cost - st.session_state.gold)})", disabled=True, key=f"l_{item}")
-    
-    st.write("---")
     with st.expander("ADD NEW"):
         tab1, tab2 = st.tabs(["ACT", "REW"])
         with tab1:
@@ -280,13 +329,13 @@ while st.session_state.xp >= 100:
     st.session_state.level += 1
     st.session_state.xp -= 100
     st.toast(f"LEVEL UP! LV.{st.session_state.level}")
-    save_data(user_id)
+    save_data(user_id) # 升级自动保存
 
 # ==========================================
 # 6. 主界面
 # ==========================================
 c1, c2 = st.columns([3, 1])
-with c1: st.title(f"LifeGame: {user_id}") # 标题也显示用户名
+with c1: st.title(f"LifeGame: {user_id}")
 with c2: st.metric("LEVEL", f"{st.session_state.level}")
 
 st.write("---")
@@ -296,6 +345,8 @@ with c_xp:
     render_custom_bar("EXPERIENCE", st.session_state.xp, 100, "#FFD700", "#FDB931")
 with c_en:
     render_custom_bar("ENERGY", st.session_state.energy, 100, "#00d2ff", "#3a7bd5")
+
+st.markdown(f"<div class='gold-stat' style='text-align:center; margin-top:20px'>{int(st.session_state.gold)} <span style='font-size:0.4em; color:#666'>GOLD</span></div>", unsafe_allow_html=True)
 
 # ==========================================
 # 7. 行动区
@@ -355,7 +406,7 @@ for name, values in st.session_state.activities.items():
                         if "复盘" in name: st.session_state.count_review += 1
                         if "健身" in name: st.session_state.count_gym += 1
                         
-                        save_data(user_id) # 这里的 Save 也要带上 user_id
+                        save_data(user_id) 
                         
                         if is_crit: st.toast(f"🔥 CRIT! XP +{int(t_xp)}")
                         else: st.toast(f"Done. XP +{int(t_xp)}")
