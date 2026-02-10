@@ -7,7 +7,7 @@ import time
 # ==========================================
 # 1. UI 配置 (Obsidian Theme)
 # ==========================================
-st.set_page_config(page_title="LifeGame V16 Leaderboard", layout="wide")
+st.set_page_config(page_title="LifeGame V17", layout="wide")
 
 st.markdown("""
 <style>
@@ -102,7 +102,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 存档与排行榜系统 (Ranking Engine)
+# 2. 存档与排行榜系统
 # ==========================================
 
 def get_save_file(username):
@@ -136,40 +136,24 @@ def save_data(username):
     with open(file_path, "w", encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- 🔥 新增：扫描所有人并排序 ---
 def get_leaderboard_data():
-    # 1. 找到当前目录下所有 save_ 开头的 json 文件
     files = [f for f in os.listdir('.') if f.startswith('save_') and f.endswith('.json')]
-    
     leaderboard = []
-    
     for f in files:
         try:
-            # 从文件名提取用户名 (save_Nadir.json -> Nadir)
             user_name = f.replace("save_", "").replace(".json", "")
-            
             with open(f, "r", encoding='utf-8') as file:
                 data = json.load(file)
                 lvl = data.get('level', 1)
                 xp = data.get('xp', 0)
-                # 计算总分 (等级权重高，XP权重低)
-                # 比如 LV.5 XP.50 = 550分
                 score = (lvl * 100) + xp 
-                
-                leaderboard.append({
-                    "name": user_name,
-                    "level": lvl,
-                    "score": score
-                })
-        except:
-            continue
-            
-    # 2. 按分数从高到低排序
+                leaderboard.append({"name": user_name, "level": lvl, "score": score})
+        except: continue
     leaderboard.sort(key=lambda x: x["score"], reverse=True)
     return leaderboard
 
 # ==========================================
-# 3. 核心工具函数：手写 HTML 进度条
+# 3. 核心工具函数
 # ==========================================
 def render_custom_bar(label, value, max_val, color_start, color_end):
     percentage = min(100, max(0, (value / max_val) * 100))
@@ -200,7 +184,7 @@ def get_badge_status(count, name_map):
     return f"<div class='badge-card' style='border-style:dashed; color:#444;'>🔒 {name_map}<br><small>{count}/7</small></div>"
 
 # ==========================================
-# 4. 侧边栏：登录与排行榜
+# 4. 侧边栏：完整控制台
 # ==========================================
 with st.sidebar:
     st.title("CMD CENTER")
@@ -208,10 +192,8 @@ with st.sidebar:
     st.markdown("### 🆔 PLAYER ID")
     user_id = st.text_input("Login Name", "Guest")
     
-    # 自动保存当前用户标识
     if 'current_user' not in st.session_state: st.session_state.current_user = user_id
     
-    # 切换用户逻辑
     saved_data = load_data(user_id)
     if st.session_state.current_user != user_id:
         st.session_state.current_user = user_id
@@ -259,17 +241,23 @@ with st.sidebar:
                 "🥤 奶茶": 600, "🎮 新游戏": 8000, "✈️ 旅行": 30000
             }
 
-    # --- 🏆 排行榜展示 (Sidebar) ---
+    # --- 1. 小金库 ---
+    st.markdown(f"<div class='gold-stat'>{int(st.session_state.gold)}</div>", unsafe_allow_html=True)
+    st.caption("GOLD RESERVES")
+    
+    if st.button("💾 SAVE DATA"):
+        save_data(user_id)
+        st.toast(f"Saved: {user_id}")
+
+    # --- 2. 排行榜 (新功能) ---
     st.write("---")
     with st.expander("🏆 GLOBAL RANKING", expanded=True):
         leaders = get_leaderboard_data()
-        
         if not leaders:
             st.caption("No data yet.")
         else:
             rank = 1
             for player in leaders:
-                # 样式处理
                 icon = f"#{rank}"
                 style_class = ""
                 if rank == 1: 
@@ -281,11 +269,7 @@ with st.sidebar:
                 elif rank == 3: 
                     icon = "🥉"
                     style_class = "rank-3"
-                
-                # 高亮自己
                 is_me = "(ME)" if player['name'] == user_id else ""
-                
-                # HTML 渲染排行榜行
                 st.markdown(f"""
                 <div class="leader-row">
                     <span class="{style_class}">{icon} {player['name']} {is_me}</span>
@@ -293,17 +277,29 @@ with st.sidebar:
                 </div>
                 """, unsafe_allow_html=True)
                 rank += 1
-            
             if st.button("🔄 Refresh Rank"):
                 st.rerun()
 
-    # --- 其他 Sidebar ---
+    # --- 3. 进化段位 (加回来了！) ---
     st.write("---")
-    if st.button("💾 SAVE DATA"):
-        save_data(user_id)
-        st.toast(f"Saved: {user_id}")
+    with st.expander("🎖️ EVOLUTION (RANKS)"):
+        st.markdown(get_badge_status(st.session_state.count_gym, "STR (Strength)"), unsafe_allow_html=True)
+        st.markdown(get_badge_status(st.session_state.count_focus, "INT (Intellect)"), unsafe_allow_html=True)
+        st.markdown(get_badge_status(st.session_state.count_review, "WIS (Wisdom)"), unsafe_allow_html=True)
 
-    with st.expander("ADD NEW"):
+    # --- 4. 奖励兑换 (加回来了！) ---
+    st.write("---")
+    with st.expander("🎁 REWARDS (SHOP)"):
+        for item, cost in st.session_state.rewards.items():
+            if st.session_state.gold >= cost:
+                if st.button(f"CLAIM {item}", key=f"r_{item}"):
+                    st.balloons()
+            else:
+                st.button(f"{item} ({int(cost - st.session_state.gold)})", disabled=True, key=f"l_{item}")
+    
+    # --- 5. 添加新项目 ---
+    st.write("---")
+    with st.expander("➕ ADD NEW"):
         tab1, tab2 = st.tabs(["ACT", "REW"])
         with tab1:
             n_act = st.text_input("Name")
@@ -329,7 +325,7 @@ while st.session_state.xp >= 100:
     st.session_state.level += 1
     st.session_state.xp -= 100
     st.toast(f"LEVEL UP! LV.{st.session_state.level}")
-    save_data(user_id) # 升级自动保存
+    save_data(user_id)
 
 # ==========================================
 # 6. 主界面
